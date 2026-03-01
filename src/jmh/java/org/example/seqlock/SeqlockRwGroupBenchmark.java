@@ -38,9 +38,10 @@ import org.openjdk.jmh.annotations.Warmup;
 public class SeqlockRwGroupBenchmark {
     private static final int WRITER_CPU = Integer.getInteger("seqlock.writer.cpu", -1);
     private static final int READER_CPU = Integer.getInteger("seqlock.reader.cpu", -1);
+    private static final boolean LOG_PIN = Boolean.getBoolean("seqlock.pin.log");
     private static final ThreadLocal<Integer> PINNED_CPU = ThreadLocal.withInitial(() -> Integer.MIN_VALUE);
 
-    private static void pinIfRequested(int cpu) {
+    private static void pinIfRequested(String role, int cpu) {
         if (cpu < 0) {
             return;
         }
@@ -51,6 +52,19 @@ public class SeqlockRwGroupBenchmark {
         // AffinityThreadFactory may have already bound this thread; override target CPU directly.
         Affinity.setAffinity(cpu);
         PINNED_CPU.set(cpu);
+        if (LOG_PIN) {
+            final int actualCpu = Affinity.getCpu();
+            final String status = (actualCpu == cpu) ? "OK" : "MISMATCH";
+            System.out.printf(
+                    Locale.ROOT,
+                    "[pin] role=%s requestedCpu=%d actualCpu=%d status=%s thread=%s%n",
+                    role,
+                    cpu,
+                    actualCpu,
+                    status,
+                    Thread.currentThread().getName()
+            );
+        }
     }
 
     public static class OffHeapState extends GroupState {
@@ -294,7 +308,7 @@ public class SeqlockRwGroupBenchmark {
     @GroupThreads(1)
     @Benchmark
     public int offheapWriter(OffHeapState s) {
-        pinIfRequested(WRITER_CPU);
+        pinIfRequested("writer", WRITER_CPU);
         return s.writeOne();
     }
 
@@ -302,7 +316,7 @@ public class SeqlockRwGroupBenchmark {
     @GroupThreads(1)
     @Benchmark
     public long offheapReader(OffHeapState s) {
-        pinIfRequested(READER_CPU);
+        pinIfRequested("reader", READER_CPU);
         return s.readOne();
     }
 
@@ -310,7 +324,7 @@ public class SeqlockRwGroupBenchmark {
     @GroupThreads(1)
     @Benchmark
     public int heapNaiveWriter(HeapNaiveState s) {
-        pinIfRequested(WRITER_CPU);
+        pinIfRequested("writer", WRITER_CPU);
         return s.writeOne();
     }
 
@@ -318,7 +332,7 @@ public class SeqlockRwGroupBenchmark {
     @GroupThreads(1)
     @Benchmark
     public long heapNaiveReader(HeapNaiveState s) {
-        pinIfRequested(READER_CPU);
+        pinIfRequested("reader", READER_CPU);
         return s.readOne();
     }
 
@@ -326,7 +340,7 @@ public class SeqlockRwGroupBenchmark {
     @GroupThreads(1)
     @Benchmark
     public int heapAlignedWriter(HeapAlignedState s) {
-        pinIfRequested(WRITER_CPU);
+        pinIfRequested("writer", WRITER_CPU);
         return s.writeOne();
     }
 
@@ -334,7 +348,7 @@ public class SeqlockRwGroupBenchmark {
     @GroupThreads(1)
     @Benchmark
     public long heapAlignedReader(HeapAlignedState s) {
-        pinIfRequested(READER_CPU);
+        pinIfRequested("reader", READER_CPU);
         return s.readOne();
     }
 }
