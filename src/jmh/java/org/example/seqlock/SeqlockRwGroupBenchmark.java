@@ -212,31 +212,31 @@ public class SeqlockRwGroupBenchmark {
         }
 
         long readOne() {
-            long sum = 0L;
             final int id = FIXED_ID;
-            if (table.tryLoad(id, readerSnapshot)) {
-                lastSeqById[id] = readerSnapshot.seq;
-                sum += readerSnapshot.int0;
-                sum += readerSnapshot.int1;
-                sum += readerSnapshot.int2;
-                sum += readerSnapshot.int3;
-                sum += readerSnapshot.int4;
-                sum += readerSnapshot.int5;
-                sum += readerSnapshot.int6;
-                sum += readerSnapshot.int7;
-                sum += readerSnapshot.int8;
-                sum += readerSnapshot.int9;
-                sum += readerSnapshot.int10;
-                sum += readerSnapshot.int11;
-                sum += readerSnapshot.long0;
-                sum += readerSnapshot.lastUpdateType;
-                sum += readerSnapshot.seq;
-                if (measureAge) {
-                    final long age = System.nanoTime() - readerSnapshot.long0;
-                    sum += age;
-                    if (((++sampleCounter) & SAMPLE_MASK) == 0) {
-                        ageHist.recordValue(age);
-                    }
+            table.tryLoad(id, readerSnapshot);
+
+            long sum = 0L;
+            sum += readerSnapshot.int0;
+            sum += readerSnapshot.int1;
+            sum += readerSnapshot.int2;
+            sum += readerSnapshot.int3;
+            sum += readerSnapshot.int4;
+            sum += readerSnapshot.int5;
+            sum += readerSnapshot.int6;
+            sum += readerSnapshot.int7;
+            sum += readerSnapshot.int8;
+            sum += readerSnapshot.int9;
+            sum += readerSnapshot.int10;
+            sum += readerSnapshot.int11;
+            sum += readerSnapshot.long0;
+            sum += readerSnapshot.lastUpdateType;
+            sum += readerSnapshot.seq;
+
+            if (measureAge) {
+                final long age = System.nanoTime() - readerSnapshot.long0;
+                sum += age;
+                if (((++sampleCounter) & SAMPLE_MASK) == 0) {
+                    ageHist.recordValue(age);
                 }
             }
             return sum;
