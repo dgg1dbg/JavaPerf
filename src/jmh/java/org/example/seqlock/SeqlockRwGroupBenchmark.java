@@ -36,7 +36,6 @@ import org.openjdk.jmh.annotations.Warmup;
         }
 )
 public class SeqlockRwGroupBenchmark {
-    private static final int HOT_SET_SIZE = 5;
     private static final int WRITER_CPU = Integer.getInteger("seqlock.writer.cpu", -1);
     private static final int READER_CPU = Integer.getInteger("seqlock.reader.cpu", -1);
     private static final ThreadLocal<Integer> PINNED_CPU = ThreadLocal.withInitial(() -> Integer.MIN_VALUE);
@@ -136,12 +135,10 @@ public class SeqlockRwGroupBenchmark {
     @State(Scope.Group)
     public abstract static class GroupState {
         private static final int SAMPLE_MASK = 1023;
+        private static final int FIXED_ID = 0;
 
         @Param({"256"})
         public int numSlots;
-
-        @Param({"16"})
-        public int hotStride;
 
         @Param({"false"})
         public boolean verifyAlignment;
@@ -150,7 +147,6 @@ public class SeqlockRwGroupBenchmark {
         public boolean measureAge;
 
         protected SlotTable64 table;
-        private final int[] hotIds = new int[HOT_SET_SIZE];
         private int[] lastSeqById;
         private final Snapshot64 writerSnapshot = new Snapshot64();
         private final Snapshot64 readerSnapshot = new Snapshot64();
@@ -158,7 +154,6 @@ public class SeqlockRwGroupBenchmark {
         private final AtomicBoolean agePrinted = new AtomicBoolean(false);
         private int sampleCounter;
         private int counter;
-        private long rng = 0x9E37_79B9_7F4A_7C15L;
 
         protected abstract String implName();
 
@@ -173,23 +168,13 @@ public class SeqlockRwGroupBenchmark {
             if (!isPowerOfTwo(numSlots)) {
                 throw new IllegalArgumentException("numSlots must be a power of two: " + numSlots);
             }
-            if (hotStride <= 0) {
-                throw new IllegalArgumentException("hotStride must be > 0");
-            }
-            final int maxId = (HOT_SET_SIZE - 1) * hotStride;
-            if (maxId >= numSlots) {
-                throw new IllegalArgumentException(
-                        "hot set exceeds capacity: maxId=" + maxId + ", numSlots=" + numSlots
-                );
+            if (FIXED_ID >= numSlots) {
+                throw new IllegalArgumentException("FIXED_ID out of range for numSlots=" + numSlots);
             }
 
             table = createTable(numSlots);
             lastSeqById = new int[numSlots];
-            for (int i = 0; i < HOT_SET_SIZE; i++) {
-                final int id = i * hotStride;
-                hotIds[i] = id;
-                lastSeqById[id] = table.seq(id);
-            }
+            lastSeqById[FIXED_ID] = table.seq(FIXED_ID);
 
             counter = 1;
             if (verifyAlignment) {
@@ -216,7 +201,7 @@ public class SeqlockRwGroupBenchmark {
         }
 
         int writeOne() {
-            final int id = hotIds[nextHotIndex()];
+            final int id = FIXED_ID;
             final int c = ++counter;
             fillSnapshot(writerSnapshot, id, c);
             if (measureAge) {
@@ -228,35 +213,33 @@ public class SeqlockRwGroupBenchmark {
 
         long readHot() {
             long sum = 0L;
-            for (int i = 0; i < HOT_SET_SIZE; i++) {
-                final int id = hotIds[i];
-                final int lastSeq = lastSeqById[id];
-                if (!table.updated(id, lastSeq)) {
-                    continue;
-                }
-                if (table.tryLoad(id, readerSnapshot)) {
-                    lastSeqById[id] = readerSnapshot.seq;
-                    sum += readerSnapshot.int0;
-                    sum += readerSnapshot.int1;
-                    sum += readerSnapshot.int2;
-                    sum += readerSnapshot.int3;
-                    sum += readerSnapshot.int4;
-                    sum += readerSnapshot.int5;
-                    sum += readerSnapshot.int6;
-                    sum += readerSnapshot.int7;
-                    sum += readerSnapshot.int8;
-                    sum += readerSnapshot.int9;
-                    sum += readerSnapshot.int10;
-                    sum += readerSnapshot.int11;
-                    sum += readerSnapshot.long0;
-                    sum += readerSnapshot.lastUpdateType;
-                    sum += readerSnapshot.seq;
-                    if (measureAge) {
-                        final long age = System.nanoTime() - readerSnapshot.long0;
-                        sum += age;
-                        if (((++sampleCounter) & SAMPLE_MASK) == 0) {
-                            ageHist.recordValue(age);
-                        }
+            final int id = FIXED_ID;
+            final int lastSeq = lastSeqById[id];
+            if (!table.updated(id, lastSeq)) {
+                return sum;
+            }
+            if (table.tryLoad(id, readerSnapshot)) {
+                lastSeqById[id] = readerSnapshot.seq;
+                sum += readerSnapshot.int0;
+                sum += readerSnapshot.int1;
+                sum += readerSnapshot.int2;
+                sum += readerSnapshot.int3;
+                sum += readerSnapshot.int4;
+                sum += readerSnapshot.int5;
+                sum += readerSnapshot.int6;
+                sum += readerSnapshot.int7;
+                sum += readerSnapshot.int8;
+                sum += readerSnapshot.int9;
+                sum += readerSnapshot.int10;
+                sum += readerSnapshot.int11;
+                sum += readerSnapshot.long0;
+                sum += readerSnapshot.lastUpdateType;
+                sum += readerSnapshot.seq;
+                if (measureAge) {
+                    final long age = System.nanoTime() - readerSnapshot.long0;
+                    sum += age;
+                    if (((++sampleCounter) & SAMPLE_MASK) == 0) {
+                        ageHist.recordValue(age);
                     }
                 }
             }
@@ -278,24 +261,15 @@ public class SeqlockRwGroupBenchmark {
             final long p999 = ageHist.getValueAtPercentile(99.9);
             System.out.printf(
                     Locale.ROOT,
-                    "[age] impl=%s numSlots=%d hotStride=%d p50=%dns p99=%dns p99.9=%dns samples=%d%n",
+                    "[age] impl=%s numSlots=%d fixedId=%d p50=%dns p99=%dns p99.9=%dns samples=%d%n",
                     implName(),
                     numSlots,
-                    hotStride,
+                    FIXED_ID,
                     p50,
                     p99,
                     p999,
                     samples
             );
-        }
-
-        private int nextHotIndex() {
-            long x = rng;
-            x ^= (x << 13);
-            x ^= (x >>> 7);
-            x ^= (x << 17);
-            rng = x;
-            return (int) Long.remainderUnsigned(x, HOT_SET_SIZE);
         }
 
         private static boolean isPowerOfTwo(int v) {
