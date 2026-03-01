@@ -3,7 +3,7 @@ package org.example.seqlock;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import net.openhft.affinity.AffinityLock;
+import net.openhft.affinity.Affinity;
 import org.HdrHistogram.Histogram;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -40,7 +40,6 @@ public class SeqlockRwGroupBenchmark {
     private static final int WRITER_CPU = Integer.getInteger("seqlock.writer.cpu", -1);
     private static final int READER_CPU = Integer.getInteger("seqlock.reader.cpu", -1);
     private static final ThreadLocal<Integer> PINNED_CPU = ThreadLocal.withInitial(() -> Integer.MIN_VALUE);
-    private static final ThreadLocal<AffinityLock> PINNED_LOCK = new ThreadLocal<>();
 
     private static void pinIfRequested(int cpu) {
         if (cpu < 0) {
@@ -50,13 +49,8 @@ public class SeqlockRwGroupBenchmark {
         if (current == cpu) {
             return;
         }
-        final AffinityLock old = PINNED_LOCK.get();
-        if (old != null) {
-            old.close();
-        }
-        final AffinityLock lock = AffinityLock.acquireLock(cpu);
-        lock.bind();
-        PINNED_LOCK.set(lock);
+        // AffinityThreadFactory may have already bound this thread; override target CPU directly.
+        Affinity.setAffinity(cpu);
         PINNED_CPU.set(cpu);
     }
 
