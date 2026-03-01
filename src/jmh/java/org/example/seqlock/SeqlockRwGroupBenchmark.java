@@ -211,13 +211,9 @@ public class SeqlockRwGroupBenchmark {
             return c;
         }
 
-        long readHot() {
+        long readOne() {
             long sum = 0L;
             final int id = FIXED_ID;
-            final int lastSeq = lastSeqById[id];
-            if (!table.updated(id, lastSeq)) {
-                return sum;
-            }
             if (table.tryLoad(id, readerSnapshot)) {
                 lastSeqById[id] = readerSnapshot.seq;
                 sum += readerSnapshot.int0;
@@ -307,7 +303,7 @@ public class SeqlockRwGroupBenchmark {
     @Benchmark
     public long offheapReader(OffHeapState s) {
         pinIfRequested(READER_CPU);
-        return s.readHot();
+        return s.readOne();
     }
 
     @Group("heap_naive_rw")
@@ -323,7 +319,7 @@ public class SeqlockRwGroupBenchmark {
     @Benchmark
     public long heapNaiveReader(HeapNaiveState s) {
         pinIfRequested(READER_CPU);
-        return s.readHot();
+        return s.readOne();
     }
 
     @Group("heap_aligned_rw")
@@ -339,6 +335,6 @@ public class SeqlockRwGroupBenchmark {
     @Benchmark
     public long heapAlignedReader(HeapAlignedState s) {
         pinIfRequested(READER_CPU);
-        return s.readHot();
+        return s.readOne();
     }
 }
