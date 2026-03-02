@@ -99,13 +99,22 @@ public final class SeqlockTableDiffRunner {
             try {
                 pinCpu("reader", cfg.readerCpu, cfg.logPin);
                 final Snapshot64 snapshot = new Snapshot64();
+                int lastSeq = table.seq(FIXED_ID);
 
                 ready.countDown();
                 await(start);
                 while (!stop.get()) {
+                    final int seq = table.seq(FIXED_ID);
+                    if ((seq & 1) != 0 || seq == lastSeq) {
+                        continue;
+                    }
                     if (!table.tryLoad(FIXED_ID, snapshot)) {
                         continue;
                     }
+                    if ((snapshot.seq & 1) != 0 || snapshot.seq == lastSeq) {
+                        continue;
+                    }
+                    lastSeq = snapshot.seq;
                     if (record) {
                         final long diff = System.nanoTime() - snapshot.long0;
                         if (diff >= 0L) {
