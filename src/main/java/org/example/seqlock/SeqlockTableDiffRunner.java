@@ -1,5 +1,8 @@
 package org.example.seqlock;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -24,12 +27,12 @@ public final class SeqlockTableDiffRunner {
 
     public static void main(String[] args) throws InterruptedException {
         final Config cfg = Config.fromSystemProperties();
-        printConfig(cfg);
+        final List<TableCase> cases = resolveCases(args);
+        printConfig(cfg, cases);
 
-        runCase("offheap", OffHeapAlignedTable::new, cfg);
-        runCase("heap-naive", HeapByteNaiveTable::new, cfg);
-        runCase("heap-aligned", HeapByteAlignedStartTable::new, cfg);
-        runCase("object-array", ObjectArraySnapshotTable::new, cfg);
+        for (TableCase tc : cases) {
+            runCase(tc.name, tc.factory, cfg);
+        }
     }
 
     private static void runCase(String name, IntFunction<SlotTable64> tableFactory, Config cfg) throws InterruptedException {
@@ -45,9 +48,10 @@ public final class SeqlockTableDiffRunner {
 
         System.out.printf(
                 Locale.ROOT,
-                "[%s] samples=%d avg=%.1fns p50=%dns p99=%dns p99.9=%dns%n",
+                "[%s] samples=%d min=%dns avg=%.1fns p50=%dns p99=%dns p99.9=%dns%n",
                 result.name,
                 result.samples,
+                result.minNs,
                 result.avgNs,
                 result.p50Ns,
                 result.p99Ns,
@@ -105,13 +109,10 @@ public final class SeqlockTableDiffRunner {
                 await(start);
                 while (!stop.get()) {
                     final int seq = table.seq(FIXED_ID);
-                    if ((seq & 1) != 0 || seq == lastSeq) {
+                    if (seq == lastSeq) {
                         continue;
                     }
                     if (!table.tryLoad(FIXED_ID, snapshot)) {
-                        continue;
-                    }
-                    if ((snapshot.seq & 1) != 0 || snapshot.seq == lastSeq) {
                         continue;
                     }
                     lastSeq = snapshot.seq;
@@ -197,16 +198,58 @@ public final class SeqlockTableDiffRunner {
         dst.seq = 0;
     }
 
-    private static void printConfig(Config cfg) {
+    private static void printConfig(Config cfg, List<TableCase> cases) {
+        final String order = cases.stream().map(c -> c.name).reduce((a, b) -> a + "," + b).orElse("-");
         System.out.printf(
                 Locale.ROOT,
-                "SeqlockTableDiffRunner: numSlots=%d warmup=%ds measure=%ds writerCpu=%d readerCpu=%d%n",
+                "SeqlockTableDiffRunner: numSlots=%d warmup=%ds measure=%ds writerCpu=%d readerCpu=%d order=%s%n",
                 cfg.numSlots,
                 cfg.warmupSeconds,
                 cfg.measureSeconds,
                 cfg.writerCpu,
-                cfg.readerCpu
+                cfg.readerCpu,
+                order
         );
+    }
+
+    private static List<TableCase> resolveCases(String[] args) {
+        final List<String> requested = new ArrayList<>();
+        if (args != null) {
+            for (String arg : args) {
+                if (arg == null || arg.isBlank()) {
+                    continue;
+                }
+                final String[] split = arg.split(",");
+                for (String s : split) {
+                    final String name = s.trim();
+                    if (!name.isEmpty()) {
+                        requested.add(name);
+                    }
+                }
+            }
+        }
+
+        if (requested.isEmpty()) {
+            requested.addAll(Arrays.asList("offheap", "heap-naive", "heap-aligned", "object-array"));
+        }
+
+        final List<TableCase> cases = new ArrayList<>(requested.size());
+        for (String name : requested) {
+            cases.add(new TableCase(name, factoryFor(name)));
+        }
+        return cases;
+    }
+
+    private static IntFunction<SlotTable64> factoryFor(String name) {
+        return switch (name) {
+            case "offheap" -> OffHeapAlignedTable::new;
+            case "heap-naive" -> HeapByteNaiveTable::new;
+            case "heap-aligned" -> HeapByteAlignedStartTable::new;
+            case "object-array" -> ObjectArraySnapshotTable::new;
+            default -> throw new IllegalArgumentException(
+                    "Unknown table '" + name + "'. Available: offheap, heap-naive, heap-aligned, object-array"
+            );
+        };
     }
 
     private record Config(
@@ -233,18 +276,23 @@ public final class SeqlockTableDiffRunner {
         private final Histogram histogram = new Histogram(1, TimeUnit.DAYS.toNanos(1), 3);
         private long samples;
         private long totalNs;
+        private long minNs = Long.MAX_VALUE;
 
         void record(long diffNs) {
             final long recorded = Math.max(1L, diffNs);
             histogram.recordValue(recorded);
             samples++;
             totalNs += diffNs;
+            if (diffNs < minNs) {
+                minNs = diffNs;
+            }
         }
 
         Result toResult(String name) {
             return new Result(
                     name,
                     samples,
+                    samples == 0L ? 0L : minNs,
                     samples == 0L ? 0.0 : totalNs / samples,
                     histogram.getValueAtPercentile(50.0),
                     histogram.getValueAtPercentile(99.0),
@@ -256,13 +304,17 @@ public final class SeqlockTableDiffRunner {
     private record Result(
             String name,
             long samples,
+            long minNs,
             double avgNs,
             long p50Ns,
             long p99Ns,
             long p999Ns
     ) {
         static Result empty(String name) {
-            return new Result(name, 0L, 0.0, 0L, 0L, 0L);
+            return new Result(name, 0L, 0L, 0.0, 0L, 0L, 0L);
         }
+    }
+
+    private record TableCase(String name, IntFunction<SlotTable64> factory) {
     }
 }
