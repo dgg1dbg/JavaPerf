@@ -29,6 +29,13 @@ tasks.register<JavaExec>("runSeqlockDiff") {
     description = "Run non-JMH seqlock diff runner"
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("org.example.seqlock.SeqlockTableDiffRunner")
+    doFirst {
+        val forwarded = System.getProperties()
+            .stringPropertyNames()
+            .filter { it.startsWith("seqlock.") }
+            .associateWith { System.getProperty(it) }
+        systemProperties(forwarded)
+    }
 }
 
 jmh {
