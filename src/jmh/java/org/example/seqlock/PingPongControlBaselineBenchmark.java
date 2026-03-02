@@ -27,7 +27,7 @@ import org.openjdk.jmh.infra.Control;
 @OutputTimeUnit(TimeUnit.NANOSECONDS)
 @Warmup(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
 @Measurement(iterations = 10, time = 1, timeUnit = TimeUnit.SECONDS)
-@Fork(value = 3, jvmArgsAppend = {"-XX:+AlwaysPreTouch"})
+@Fork(value = 3)
 @State(Scope.Group)
 public class PingPongControlBaselineBenchmark {
 
