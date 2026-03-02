@@ -12,9 +12,9 @@ repositories {
 
 dependencies {
     implementation("org.agrona:agrona:1.22.0")
-    jmhImplementation("org.hdrhistogram:HdrHistogram:2.2.2")
-    jmhImplementation("net.openhft:affinity:3.23.2")
-    jmhRuntimeOnly("net.java.dev.jna:jna:5.14.0")
+    implementation("org.hdrhistogram:HdrHistogram:2.2.2")
+    implementation("net.openhft:affinity:3.23.2")
+    runtimeOnly("net.java.dev.jna:jna:5.14.0")
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
@@ -22,6 +22,13 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+}
+
+tasks.register<JavaExec>("runSeqlockDiff") {
+    group = "application"
+    description = "Run non-JMH seqlock diff runner"
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("org.example.seqlock.SeqlockTableDiffRunner")
 }
 
 jmh {
