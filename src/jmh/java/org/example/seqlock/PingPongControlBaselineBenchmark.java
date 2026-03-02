@@ -67,13 +67,13 @@ public class PingPongControlBaselineBenchmark {
 
     @Benchmark @Group("pingpong") @GroupThreads(1)
     public void ping(Control c, PingPin p) {
-//        while (!c.stopMeasurement && !flag.compareAndSet(false, true)) {
-//        }
+        while (!c.stopMeasurement && !flag.compareAndSet(false, true)) {
+        }
     }
 
     @Benchmark @Group("pingpong") @GroupThreads(1)
     public void pong(Control c, PongPin p) {
-//        while (!c.stopMeasurement && !flag.compareAndSet(true, false)) {
-//        }
+        while (!c.stopMeasurement && !flag.compareAndSet(true, false)) {
+        }
     }
 }
