@@ -146,6 +146,18 @@ public class SeqlockRwGroupBenchmark {
         }
     }
 
+    public static class ObjectState extends GroupState {
+        @Override
+        protected String implName() {
+            return "object-array";
+        }
+
+        @Override
+        protected SlotTable64 createTable(int numSlots) {
+            return new ObjectArraySnapshotTable(numSlots);
+        }
+    }
+
     @State(Scope.Group)
     public abstract static class GroupState {
         private static final int SAMPLE_MASK = 1023;
@@ -348,6 +360,22 @@ public class SeqlockRwGroupBenchmark {
     @GroupThreads(1)
     @Benchmark
     public long heapAlignedReader(HeapAlignedState s) {
+        pinIfRequested("reader", READER_CPU);
+        return s.readOne();
+    }
+
+    @Group("object_rw")
+    @GroupThreads(1)
+    @Benchmark
+    public int objectWriter(ObjectState s) {
+        pinIfRequested("writer", WRITER_CPU);
+        return s.writeOne();
+    }
+
+    @Group("object_rw")
+    @GroupThreads(1)
+    @Benchmark
+    public long objectReader(ObjectState s) {
         pinIfRequested("reader", READER_CPU);
         return s.readOne();
     }
