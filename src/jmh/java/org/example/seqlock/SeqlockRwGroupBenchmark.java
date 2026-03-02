@@ -36,34 +36,41 @@ import org.openjdk.jmh.annotations.Warmup;
         }
 )
 public class SeqlockRwGroupBenchmark {
-    private static final int WRITER_CPU = Integer.getInteger("seqlock.writer.cpu", -1);
-    private static final int READER_CPU = Integer.getInteger("seqlock.reader.cpu", -1);
-    private static final boolean LOG_PIN = Boolean.getBoolean("seqlock.pin.log");
-    private static final ThreadLocal<Integer> PINNED_CPU = ThreadLocal.withInitial(() -> Integer.MIN_VALUE);
+    @State(Scope.Thread)
+    public static class PinState {
+        int cpu;
+        boolean pinned;
 
-    private static void pinIfRequested(String role, int cpu) {
-        if (cpu < 0) {
-            return;
+        void pinOnce() {
+            if (cpu < 0 || pinned) {
+                return;
+            }
+            Affinity.setAffinity(cpu);
+            pinned = true;
         }
-        final int current = PINNED_CPU.get();
-        if (current == cpu) {
-            return;
+    }
+
+    @State(Scope.Thread)
+    public static class WriterPin extends PinState {
+        {
+            cpu = Integer.getInteger("seqlock.writer.cpu", -1);
         }
-        // AffinityThreadFactory may have already bound this thread; override target CPU directly.
-        Affinity.setAffinity(cpu);
-        PINNED_CPU.set(cpu);
-        if (LOG_PIN) {
-            final int actualCpu = Affinity.getCpu();
-            final String status = (actualCpu == cpu) ? "OK" : "MISMATCH";
-            System.out.printf(
-                    Locale.ROOT,
-                    "[pin] role=%s requestedCpu=%d actualCpu=%d status=%s thread=%s%n",
-                    role,
-                    cpu,
-                    actualCpu,
-                    status,
-                    Thread.currentThread().getName()
-            );
+
+        @Setup(Level.Trial)
+        public void setup() {
+            pinOnce();
+        }
+    }
+
+    @State(Scope.Thread)
+    public static class ReaderPin extends PinState {
+        {
+            cpu = Integer.getInteger("seqlock.reader.cpu", -1);
+        }
+
+        @Setup(Level.Trial)
+        public void setup() {
+            pinOnce();
         }
     }
 
@@ -319,64 +326,56 @@ public class SeqlockRwGroupBenchmark {
     @Group("offheap_rw")
     @GroupThreads(1)
     @Benchmark
-    public int offheapWriter(OffHeapState s) {
-        pinIfRequested("writer", WRITER_CPU);
+    public int offheapWriter(OffHeapState s, WriterPin pin) {
         return s.writeOne();
     }
 
     @Group("offheap_rw")
     @GroupThreads(1)
     @Benchmark
-    public long offheapReader(OffHeapState s) {
-        pinIfRequested("reader", READER_CPU);
+    public long offheapReader(OffHeapState s, ReaderPin pin) {
         return s.readOne();
     }
 
     @Group("heap_naive_rw")
     @GroupThreads(1)
     @Benchmark
-    public int heapNaiveWriter(HeapNaiveState s) {
-        pinIfRequested("writer", WRITER_CPU);
+    public int heapNaiveWriter(HeapNaiveState s, WriterPin pin) {
         return s.writeOne();
     }
 
     @Group("heap_naive_rw")
     @GroupThreads(1)
     @Benchmark
-    public long heapNaiveReader(HeapNaiveState s) {
-        pinIfRequested("reader", READER_CPU);
+    public long heapNaiveReader(HeapNaiveState s, ReaderPin pin) {
         return s.readOne();
     }
 
     @Group("heap_aligned_rw")
     @GroupThreads(1)
     @Benchmark
-    public int heapAlignedWriter(HeapAlignedState s) {
-        pinIfRequested("writer", WRITER_CPU);
+    public int heapAlignedWriter(HeapAlignedState s, WriterPin pin) {
         return s.writeOne();
     }
 
     @Group("heap_aligned_rw")
     @GroupThreads(1)
     @Benchmark
-    public long heapAlignedReader(HeapAlignedState s) {
-        pinIfRequested("reader", READER_CPU);
+    public long heapAlignedReader(HeapAlignedState s, ReaderPin pin) {
         return s.readOne();
     }
 
     @Group("object_rw")
     @GroupThreads(1)
     @Benchmark
-    public int objectWriter(ObjectState s) {
-        pinIfRequested("writer", WRITER_CPU);
+    public int objectWriter(ObjectState s, WriterPin pin) {
         return s.writeOne();
     }
 
     @Group("object_rw")
     @GroupThreads(1)
     @Benchmark
-    public long objectReader(ObjectState s) {
-        pinIfRequested("reader", READER_CPU);
+    public long objectReader(ObjectState s, ReaderPin pin) {
         return s.readOne();
     }
 }
